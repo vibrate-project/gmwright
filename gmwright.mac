@@ -1,0 +1,313 @@
+/*
+ Wright function calculation
+*/
+
+load ("operpart");
+load ("intde1");
+load ("quadde");
+
+sgn(x):=block(
+	if not atom(x) then (if op(x)="-" then -1) 
+	else 
+		if numberp(x) then if x<0 then -1 else 1 
+	else 1
+);
+
+gmult( m, x):= product ( Gamma( x+%k/m), %k, 0, m-1) * m^(m*x-1/2)/sqrt(2*%pi)^(m-1); 
+
+gradef (wright (a, b, x),  
+'diff(wright(a, b, x), a),  
+'diff(wright(a, b, x), b), 
+wright(a, a+b, x) );
+
+rationalp(x):= integerp(num(x)) and integerp(denom(x));
+
+declare(rexpand, evfun); 
+rexpand(expr):=block([u,v], 
+	subst("^"=lambda([u,v], if u=-1 then cos(v*%pi)+%i*sin(v*%pi) else u^v ), expr)
+);
+
+airybisubst(expr):=block([ m, x, ret],
+	ret:subst('bessel_i = lambda([m, x],
+				if m=-1/3 then
+				 airy_bi((3/2*x)^(2/3) )*(2*sqrt(3/x^2))^(1/3)-bessel_i(-m, x)
+				else bessel_i(m, x)
+			), expr),
+	ret:subst('bessel_j = lambda([m, x],
+				if m=-1/3 then
+				 airy_bi(-(3/2*x)^(2/3) )*(2*sqrt(3/x^2))^(1/3)+bessel_i(-m, x)
+				else bessel_i(m, x)
+			), ret),		
+			
+	expand(ret)
+);
+
+airyaisubst(expr):=block([ m, x, ret, assume_pos:true],
+	ret:subst('bessel_i = lambda([m, x],
+				if m=-1/3 then
+				 (18/sqrt(x^2))^(1/3)*airy_ai(((9*x^2)/4)^(1/3))+bessel_i(-m, x)
+				else bessel_i(m, x)
+			), expr),
+	ret:subst('bessel_i = lambda([m, x],
+				if m=-2/3 then
+				 bessel_i(-m,sqrt(x^2))-(12/x^2)^(1/3)*airy_dai(((9*x^2)/4)^(1/3))
+				else bessel_i(m, x)
+			), ret),
+	ret:subst('bessel_k = lambda([m, x],
+				if m=1/3 then
+				(%pi*(18/x)^(1/3)*airy_ai(((9*x^2)/4)^(1/3)))/sqrt(3)
+				else bessel_k(m, x)
+			), ret),		
+	ret:subst('bessel_k = lambda([m, x],		
+			if m=2/3 then
+				-%pi*(4/(sqrt(3)*x^2))^(1/3)*airy_dai(((9*x^2)/4)^(1/3))
+				else bessel_k(m, x)
+			), ret),				
+	ret:subst('bessel_j = lambda([m, x],
+			if m=-1/3 then
+				 (18/sqrt(x^2))^(1/3)*airy_ai(-((9*x^2)/4)^(1/3))-bessel_j(-m, x)
+				else bessel_j(m, x)
+			), ret),		
+	ret:subst('bessel_j = lambda([m, x],
+				if m=-2/3 then
+				 bessel_j(-m,sqrt(x^2))-(12/x^2)^(1/3)*airy_dai(-((9*x^2)/4)^(1/3))
+				else bessel_j(m, x)
+			), ret),		
+	expand(ret)
+);
+
+ 
+ 
+besseljsubst(expr):=block([ m, x, ret],
+	ret:subst('bessel_j = lambda([m, x],
+				if m>0 then
+				 (bessel_y(m, x )*sin(m*%pi) + bessel_j(-m, x))/cos(m*%pi)
+				else bessel_j(m, x)
+			), expr),
+	ret:rexpand(ret),
+	expand(ret)	 
+);
+
+besselisubst(expr):=block([ m, x, ret],
+	ret:subst('bessel_i = lambda([m, x],
+				if m<0 then
+				 2/%pi*bessel_k(-m, x )*sin(-m*%pi) + bessel_i(-m, x)
+				else bessel_i(m, x)
+			), expr),
+	ret:rexpand(ret),
+	expand(ret)
+);
+
+declare(wrightsimp, evfun); 
+wrightsimp(wexpr):=block([ l, r, ret:wexpr, a, b, x,  z, mm, nn, lsta:[], lstb:[],  ss:0, j, listarith:true, gamma_expand:true, assume_pos:true ],
+	if freeof (wright, wexpr) then return (wexpr),
+	if inop(wexpr)="+" then 
+		ret:map(lambda([z],  wrightsimp(z)), wexpr)
+	elseif inop(wexpr)='wright then (	
+		[a, b, x]:args( wexpr),
+		if a=0 then
+			if  integerp(b) and  b <=0  then return(0) 
+			else ret:exp(x)/gamma(b),
+			 
+		if rationalp(a) and a>0 and a <= 1 then (
+			nn: num(a), mm:denom (a),
+			/* display(nn, mm),*/
+			for r:0 thru mm-1 do ( 
+				lsta: makelist(r/mm +(b+j)/nn, j, 0, nn-1),
+				lstb: makelist((r+1+j)/mm, j, 0, mm-1),
+				display(lsta, lstb),
+				ss: x^r/r! /gamma(a*r+b)* hgfred([1], append(lsta, lstb), x^mm/ mm^mm/ nn^nn)+ss
+			),
+			ret:ss
+		 ),
+		 if rationalp(a) and a<0 then (
+			nn:abs(num(a)), mm:denom (a),
+			/* display(nn, mm),*/
+			for r:0 thru mm-1 do ( 
+				/* we use the Gamma reflection formula */
+				lsta: makelist(1+r/mm -(b+j)/nn, j, 0, nn-1),
+				lstb: makelist((r+1+j)/mm, j, 0, mm-1),
+				display(lsta, lstb),
+				if  not integerp(a*r+b) then
+					ss: x^r/r! /gamma(a*r+b)* hgfred( cons(1, lsta), lstb, (-1)^nn*x^mm/ mm^mm *nn^nn)+ss
+			),
+			if b>=1 then (
+				/* polynomial component */
+				ss:ss + mdx3(x, b, abs(a))
+			),
+			ret:ss 
+		 )		 
+	) else (
+		[l, r]: partbyvar(wexpr, wright),
+		l:subst(nil=1, l),
+		ret:l * wrightsimp(r)
+	),
+	ret
+);
+
+mdx3(x, n, q):=block([ s:0, xi], 
+	if n<=0 then return(0),
+	if n=1 then return(1) 
+	else (
+		if integerp(n) then s:1/gamma(n), 
+		s:integrate(mdx3(xi, n-q,q) ,xi, 0, x)+s, 
+		expand(s)
+	)
+);
+
+/*
+mdx4(x, n, q):=block([ s:0, xi], 
+	if n<=0 then return(0),
+	if n=1 then return(1) 
+	else (
+		  s:1/gamma(n), 
+		s:integrate(mdx4(xi, n-q,q) ,xi, 0, x)+s, 
+		expand(s)
+	)
+);
+*/
+
+declare(hgsubst, evfun); 
+hgsubst(expr):=block([u, v, ss, ret],
+	if inop(expr)="+" then 
+			ret:map(lambda([u],  hgsubst(u)), expr)
+	else (
+		[l, r]: partbyop(expr, %f),
+		l:subst(nil=1, l),
+		r:subst(nil=1, r),
+		ss: subst( %f=lambda([u,v], hypergeometric ), r),
+		ret:l * ss
+	),
+	ret	
+);
+
+
+/*
+numerics
+*/
+PP(z,a,b,eps):=%e^(eps*cos(phi)-(cos(a*phi)*z)/eps^a)*cos((sin(a*phi)*z)/eps^a+eps*sin(phi)+ (1-b)*phi);
+ 
+phasewright1(t, a, b, eps):=block([ r, u, phi, ret:0,  fr:1/(2*%pi), pp:0 ],
+	pp:first(quad_qag(PP( t, a, b, eps), phi, -%pi, %pi, 1, 'epsrel=1d-8)),
+	float(fr*pp*eps^(1-b))
+);
+
+phasewright2(t, a, b, eps):=block([ r, u, phi, ret:0, fr:1/(2*%pi),  pp:0 ],
+	pp:first(quad_intde(PP( t, a, b, eps), phi, -%pi, %pi,  'epsrel=1d-8)),
+	float(fr*pp*eps^(1-b))
+);
+
+Kwg(z, a, b):=u^(1/b-2)*%e^(-(cos(%pi*a)*z)/u^(a/b)-u^(1/b))*sin(-(sin(%pi*a)*z)/u^(a/b)+%pi*b);
+
+Kwgr0(z,a):=%e^(-(cos(%pi*a)*z)/r^a-r)*sin(-(sin(%pi*a)*z)/r^a);
+
+Kwgr(z, a, b):=%e^(-(cos(%pi*a)*z)/r^a-r)*sin(-(sin(%pi*a)*z )/r^a + %pi *b)/r^b;
+
+/* negative sign u =r^a*/
+Kwg1(z, a, b):=u^((1-b)/a-1)*%e^(-(cos(%pi*a)*z)/u-u^(1/a))* sin((sin(%pi*a)*z)/u-%pi*b);
+
+
+/* all params*/
+gmwright(t, a, b):=block([ r, u, ret:0, fr:1/%pi,  pp:0, eps:1],
+    if not numberp(t) then return('gmwright(t,a,b)), 
+	if t=0 then 
+		return(1/gamma(b)),
+    if a=0 then 
+		ret:exp(t)/gamma(b)
+    else (
+		if a<0 then (	
+			if b=0 then 
+				ret:fr*first(quad_intdei(Kwgr0( -t, a ), r, 0, 'epsrel=1d-8))
+			elseif b=1 then
+				ret:1+fr*first(quad_intdei(Kwgr( -t, a, b), r, 0, 'epsrel=1d-8))
+			else
+				if b>0 then
+					if b<=1 then (
+						ret:fr*first(quad_intdei(Kwgr( -t, a, b), r, 0, 'epsrel=1d-8))
+					) else(
+						eps:1, 
+						pp:phasewright2(-t, a, b, eps),
+						ret:fr*first(quad_intdei (Kwgr( -t, a, b), r,  eps,  'epsrel=1d-8)),
+						/*ret:fr/a*first(quad_intdei(Kwg1( -t, a, b), u, eps^a, 'epsrel=1d-8)),*/
+						/*ret:fr/b*first(quad_intdei(Kwg( -t, a, b), u, eps^b, 'epsrel=1d-8)),*/
+						ret: ret+pp
+					)
+				else
+					ret:fr/a*first(quad_intdei (Kwg1( -t, a, b), u, 0, 'epsrel=1d-8))
+		)else (
+			/*stationary phase method*/
+			eps:max(float( abs(a*t)^(1/(a+1))), 1.0),
+			ret:-fr/a*first(quad_intdei (Kwg1( -t, a, b), u, eps^a,   'epsrel=1d-8)),
+			/*fr*first(quad_intdei(Kwgr( -t, a, b), r, 0, 'epsrel=1d-8)),*/
+			pp:phasewright2(-t, a, b, eps),
+			ret:float(ret)+pp
+		)
+	),
+    float(ret)
+);
+
+
+
+gmwright2(t, a, b):=block([ r, u, ret:0, fr: 1/%pi, nn:1, pp:0, eps:1],
+    if not numberp(t) then return('gmwright2(t,a,b)), 
+	if t=0 then 
+		return(1/gamma(b)),
+    if a=0 then 
+		ret:exp(t)/gamma(b)
+    else (
+		eps:float( abs(a*t)^(1/(a+1))),
+		if a<0 then (	
+			if b=0 then 
+				ret:fr*first(quad_qagi(Kwgr0( -t, a ), r, 0, inf, 'epsrel=1d-8))
+			elseif b=1 then
+				ret:1+fr/a*first(quad_qagi(Kwg1( -t, a, b), u, 0, inf, 'epsrel=1d-8))
+			else
+				if b>0 then
+					if b<=1 then 
+						ret:fr/a*first(quad_qagi (Kwg1( -t, a, b), u, 0, inf, 'epsrel=1d-8))
+					else (
+						pp:phasewright1(-t, a, b, eps),
+						ret:fr/b*first(quad_qagi (Kwg( -t, a, b), u,  eps^b, inf, 'epsrel=1d-8)),
+						ret:ret+pp
+						)
+				else
+					ret:fr/a*first(quad_qagi (Kwg1( -t, a, b), u,0, inf, 'epsrel=1d-8))
+		)else (
+			/*stationary phase method*/
+			eps:float( abs(a*t)^(1/(a+1))),
+			ret:-fr/a*first(quad_qagi (Kwg1( -t, a, b), u, eps^a, inf, 'epsrel=1d-8)),
+			pp:phasewright1(-t, a, b, eps),
+			ret:float(ret)+pp
+		)
+	),
+    float(ret)
+);
+
+phaseres(a,n, z):= block([xi, ker: exp(xi+z*xi^a)/xi^n],
+if integerp(a) and integerp(n) then
+	residue(ker,xi, 0)
+else 
+	ker*dxi
+);
+
+phaseres1(a,n, z):= block([xi, ker: exp(xi+z*xi^a) ],
+if integerp(a) and integerp(n) then
+	at(diff(ker,xi, n-1)/gamma(n), xi=0)
+else 
+	ker*dxi/xi^n
+);
+
+/* W(-n, m, x) in terms of Bell polynomials */
+G(m, f, x):=genmatrix(lambda([i,j],  if j-i+1#0 then binomial(m-i,j-i)*'diff(f, x,j-i+1)   else -1 ), m, m);
+
+W(n, m, z):=block([ret, x:gensym()], 
+	ret:G(m-1,x+'z* x^n, x),
+	ret:ev(ret, nouns), 
+	ret:rat(at(ret, x=0)), 
+	ret:determinant(ret)/ gamma(m),
+	ratdisrep(ret)
+);
+
+wrightm(m, a):=block ([u],
+	quad_qagi (u^m*'gmwright2(-u, -a, 1-a), u,  0, inf,  'epsrel=1d-8)
+);

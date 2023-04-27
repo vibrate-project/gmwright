@@ -1,0 +1,253 @@
+/**
+   Handling of general expressions
+   
+   main functions
+   
+   [l, r]:oppart(expr, predicate)
+   
+   partbyvar(expr, var)
+   
+   partbyop(expr, var)
+   
+   partbyconst(expr, var)
+   
+   explodeop(expr, sop)
+   
+   implodeop(lsta, sop)
+   
+   countsymb(ab, sym)
+   
+   fnsort(expr, fn, [dir])
+   
+   auxilliary functions
+   
+   inop(expr)
+   
+   inargs(expr)
+   
+   argsgreatp(uu, vv, fn)
+   
+   argslessp(uu, vv, fn)
+
+(C) - Dimiter Prodanov, 2015 - 2020
+ 
+@license This library is free software; you can redistribute it and/or
+        modify it under the terms of the GNU Lesser General Public
+        License as published by the Free Software Foundation; either
+        version 2.1 of the License, or (at your option) any later version.
+  
+        This library is distributed in the hope that it will be useful,
+        but WITHOUT ANY WARRANTY; without even the implied warranty of
+        MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
+         Lesser General Public License for more details.
+  
+        You should have received a copy of the GNU Lesser General Public
+        License along with this library; if not, write to the Free Software
+        Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
+		
+*/
+
+/*
+* \brief error-safe version of op. 
+* \param [in] expr expression
+* \return operator or nil
+*/
+inop(expr):= if not mapatom (expr)  then inpart(expr, 0) else 'nil;
+
+/**
+ *  \brief error-safe version of args 
+ *  
+ *  \param [in] expr expression
+ *  \return list of arguments or nil
+ *  
+ *  \details More details
+ */
+inargs(expr):= if not mapatom (expr)  then  substinpart( "[", expr, 0) else 'nil;
+
+/*
+partition by predicate with expression reconstruction
+literal meaning
+ @usage
+ 
+[l, r]:oppart(expr, predicate)
+*/
+oppart(expr, predf):=block(
+	[sop, lst, lsttrue:[], lstfalse:[], ltrue, lfalse, err ],
+	mode_declare([lsttrue, lstfalse, lst, err], list),
+	if mapatom(expr) then (
+		if apply(predf, [expr]) then (ltrue:expr, lfalse:'nil)
+		else (lfalse:expr, ltrue:'nil),
+		return( [ltrue, lfalse])
+	) else (
+		sop:inop(expr),
+		expr:rest(expr, 0),
+		lst: inargs(expr),
+		if _debug=true then display( sop, lst), 
+		for v in lst do (
+			if apply(predf, [v]) then push(v, lsttrue) 
+			else push(v, lstfalse)
+		),
+		lsttrue:reverse(lsttrue),
+		lstfalse:reverse(lstfalse),
+		if _debug=true then display(lsttrue, lstfalse),  
+		err:errcatch (
+			ltrue:if not emptyp(lsttrue) then 
+				/*substinpart(sop, lsttrue, 0) */
+				if sop#"[" then
+					implodeop(lsttrue, sop)
+				else lsttrue
+				else 'nil,
+			lfalse:if not emptyp(lstfalse) then 
+				/*substinpart(sop, lstfalse, 0) */
+				if sop#"[" then
+					implodeop(lstfalse, sop)
+				else lstfalse
+				else 'nil,
+		 	if _debug=true then display( ltrue, lfalse), 
+			lst:[ ltrue, lfalse]
+		),
+		if _debug=true then display(err),  
+		if emptyp(err) then lst:['nil, 'nil ]
+	),
+	lst
+);
+
+/* 
+splits an expression by occurences of an operator
+*/
+explodeop(expr, sop):=block([lst, w],
+	if mapatom(expr) then return ([expr]), 
+	lst: inargs(expr),
+	lreduce(append, map(lambda([w], explodeop(w, sop)), lst))
+);
+
+/*
+combinees a list by an operator
+*/
+implodeop(lsta, sop):=block([w],
+	if not listp(lsta) then return (lsta),
+	xreduce(sop, maplist(lambda([w], implodeop(w, sop)), lsta))
+);
+
+/*
+ factor by subexpression
+*/
+factorby(expr, z):=block([quot, res, ret, ee, u, n, sop, %qq, radsubstflag:true ],
+	if emptyp(z) then return (expr),
+	if atom(expr) then return (expr),
+	if matrixp(expr) then 
+		return(matrixmap(lambda([u], factorby(u, z)), expr)),
+	if listp(expr) then 
+		ret: maplist(lambda([u], factorby(u, z)), expr)
+	else (
+		if listp(z) then z:flatten(z)
+		else z:[z],	
+		sop:op(expr),
+		if _debug=true then display(expr, sop ),
+		if sop="*" then 
+			ret:map( lambda([u], factorby(u, z) ), expr)
+		else if sop="/" then 
+			ret:factorby(num(expr), z)/factorby(denom(expr), z)
+		else if sop="^" then (
+			[ee, n]:args(expr),
+			ret:factorby(ee, z),
+			ret:ret^n
+		) else (			 
+			if inop(z[1]) = "^" then (
+				[ee, n]:inargs(z[1]),
+				assume(%qq>0),
+				expr:ratsubst(%qq, ee, expr),
+				expr:ratsubst(%qq^(1/n), %qq, expr),
+				/*display(ee, n),*/
+				[quot, res]:divide(expr, %qq),
+				/*display(quot, res, expr),*/
+				res:subst(z[1], %qq, res),
+				quot:subst(z[1], %qq, quot),
+				quot:radcan(quot)
+			) else
+				[quot, res]:divide(expr, z[1]),
+			if length(z)>1 then
+				res:factorby(res, rest(z)),
+				if res#0 then
+					ret:factor(quot)*z[1]+res
+				else ret:quot*z[1]+res
+		)
+	),
+	ret
+);
+
+/*
+counts occurences of a symbol in an expression.
+we assume that subscripted symbols are the same
+*/
+countsymb(ab, sym):=block([inflag:true ],
+	if freeof(sym, ab) then return(0),
+	if atom(ab) then  
+		if sym=ab then return(1),
+	if subvarp(ab) then  
+		if sym=op(ab) then return(1),
+	xreduce("+", maplist( lambda([i], countsymb(i, sym)), ab))
+ );
+ 
+/* counts nesting of an operator*/
+countop(ab, sym):=block([inflag:true, cnt:1 ],
+	if freeof(sym, ab) then return(0) else
+	if sym=op(ab) then 
+		cnt:cnt+ countop(first(args(ab)), sym)
+	else return(0)
+ );
+ 
+/*
+returns a sorted list of the occurences of a function in an expression
+*/
+
+fnsort(expr, fn, [dir]):=block( [la, u, v],
+	if inop(expr)=fn then return ([expr]),
+	la:sublist (args(expand(expr)), lambda([u], not freeof(fn, u))),
+	if emptyp(dir) then dir:plus else dir:first(dir),
+	if dir=plus then
+		sort(la, lambda([u, v],  argsgreatp(u, v, fn)))
+	else
+		sort(la, lambda([u, v],  argslessp(u, v, fn)))
+);
+
+argsgreatp(uu, vv, fn):=block([l1,r1,l2,r2, kk], 
+	[l1,r1]:oppart(uu, lambda([kk],  freeof(fn, kk))), 
+	[l2,r2]:oppart(vv, lambda([kk],  freeof(fn, kk))), 
+	ordergreatp(l1, l2)
+);
+
+argslessp(uu, vv, fn):=block([l1,r1,l2,r2, kk], 
+	[l1,r1]:oppart(uu, lambda([kk],  freeof(fn, kk))), 
+	[l2,r2]:oppart(vv, lambda([kk],  freeof(fn, kk))), 
+	orderlessp(l1, l2)
+);
+
+/* partition by variable */
+partbyvar(expr, var):= block([u],
+	oppart(expr,  lambda([u], freeof(var, u)))
+);
+
+/* partition by operator */
+partbyop(expr, vop):= block([u ],
+	if inop(expr)=vop then return ([nil, expr]),
+	oppart(expr,  lambda([u], freeof(vop, u)))
+);
+
+/* partition by constant */
+partbyconst(expr, var):= block([u],
+	oppart(expr, lambda([u], constantp(u)))
+);
+
+declare(resimplify, evfun);
+resimplify(ex):=expand(ex,0,0);
+
+declare(ssum, evfun);
+ssum(x):= if listp(x) then substinpart("+",x,0) else x;
+
+declare(pprod, evfun);
+pprod(x):=if listp(x) then substinpart("*",x,0) else x;
+
+put('operpart, 'v22,'version);
+put('operpart, "Dimiter Prodanov", 'author);
+put('operpart, "(C) - Dimiter Prodanov, 2015 - 2020", 'copyright);
