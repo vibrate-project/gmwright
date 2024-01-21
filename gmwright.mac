@@ -3,8 +3,8 @@
 */
 
 load ("operpart");
-load ("intde1");
-load ("quadde");
+load ("intde1.lisp");
+load ("quadde.lisp");
 
 sgn(x):=block(
 	if not atom(x) then (if op(x)="-" then -1) 
@@ -107,16 +107,22 @@ wrightsimp(wexpr):=block([ l, r, ret:wexpr, a, b, x,  z, mm, nn, lsta:[], lstb:[
 		[a, b, x]:args( wexpr),
 		if a=0 then
 			if  integerp(b) and  b <=0  then return(0) 
-			else ret:exp(x)/gamma(b),
-			 
+			else ret:exp(x)/gamma(b),			 
 		if rationalp(a) and a>0 and a <= 1 then (
 			nn: num(a), mm:denom (a),
 			/* display(nn, mm),*/
 			for r:0 thru mm-1 do ( 
-				lsta: makelist(r/mm +(b+j)/nn, j, 0, nn-1),
-				lstb: makelist((r+1+j)/mm, j, 0, mm-1),
-				display(lsta, lstb),
-				ss: x^r/r! /gamma(a*r+b)* hgfred([1], append(lsta, lstb), x^mm/ mm^mm/ nn^nn)+ss
+				if b#0 then (
+					lsta: makelist(r/mm +(b+j)/nn, j, 0, nn-1),
+					lstb: makelist((r+1+j)/mm, j, 0, mm-1),
+					display(lsta, lstb),			
+					ss: x^r/r! /gamma(a*r+b)* hgfred([1], append(lsta, lstb), x^mm/ mm^mm/ nn^nn)+ss
+				) else (
+					lsta: makelist((r+1)/mm +j/nn, j, 0, nn-1),
+					lstb: makelist((r+2+j)/mm, j, 0, mm-1),
+					display(lsta, lstb),
+					ss:  x^(r+1)/(r+1)!/gamma(a*r+a)* hgfred([1], append(lsta, lstb), x^mm/ mm^mm/ nn^nn)+ss
+				)
 			),
 			ret:ss
 		 ),
@@ -125,11 +131,19 @@ wrightsimp(wexpr):=block([ l, r, ret:wexpr, a, b, x,  z, mm, nn, lsta:[], lstb:[
 			/* display(nn, mm),*/
 			for r:0 thru mm-1 do ( 
 				/* we use the Gamma reflection formula */
-				lsta: makelist(1+r/mm -(b+j)/nn, j, 0, nn-1),
-				lstb: makelist((r+1+j)/mm, j, 0, mm-1),
-				display(lsta, lstb),
-				if  not integerp(a*r+b) then
-					ss: x^r/r! /gamma(a*r+b)* hgfred( cons(1, lsta), lstb, (-1)^nn*x^mm/ mm^mm *nn^nn)+ss
+				if b#0 then (
+					lsta: makelist(1+r/mm -(b+j)/nn, j, 0, nn-1),
+					lstb: makelist((r+1+j)/mm, j, 0, mm-1),
+					display(lsta, lstb),
+					if  not integerp(a*r+b) then
+						ss: x^r/r! /gamma(a*r+b)* hgfred( cons(1, lsta), lstb, (-1)^nn*x^mm/ mm^mm *nn^nn)+ss
+				) else (
+					lsta: makelist(1+(r+1)/mm -j/nn, j, 0, nn-1),
+					lstb: makelist((r+2+j)/mm, j, 0, mm-1),
+					display(lsta, lstb),
+					if  not integerp(a*r+a) then
+						ss:  x^(r+1)/(r+1)!/gamma(a*r+a)* hgfred(cons(1, lsta), lstb, (-1)^nn*x^mm/ mm^mm/ nn^nn)+ss
+				)
 			),
 			if b>=1 then (
 				/* polynomial component */
@@ -145,27 +159,26 @@ wrightsimp(wexpr):=block([ l, r, ret:wexpr, a, b, x,  z, mm, nn, lsta:[], lstb:[
 	ret
 );
 
+/* n=b int!, q=a*/
 mdx3(x, n, q):=block([ s:0, xi], 
+	if not numberp(n) then return('mdx3(x, n, q)),
 	if n<=0 then return(0),
+	if q<=0 then return(0),
 	if n=1 then return(1) 
 	else (
 		if integerp(n) then s:1/gamma(n), 
 		s:integrate(mdx3(xi, n-q,q) ,xi, 0, x)+s, 
-		expand(s)
-	)
+		s:expand(s)
+	),
+	s
 );
 
-/*
-mdx4(x, n, q):=block([ s:0, xi], 
-	if n<=0 then return(0),
-	if n=1 then return(1) 
-	else (
-		  s:1/gamma(n), 
-		s:integrate(mdx4(xi, n-q,q) ,xi, 0, x)+s, 
-		expand(s)
-	)
+mdx4(x, n, q):=integrate(mdx3(x*t, n, q)*exp(-t),t,0, inf);
+
+mdx6(x, n, q):=block([xi ,ret], 
+	ret:diff(1/(1-x *xi^n), xi, q),
+	at(ret, xi=0)
 );
-*/
 
 declare(hgsubst, evfun); 
 hgsubst(expr):=block([u, v, ss, ret],
@@ -193,7 +206,7 @@ phasewright1(t, a, b, eps):=block([ r, u, phi, ret:0,  fr:1/(2*%pi), pp:0 ],
 );
 
 phasewright2(t, a, b, eps):=block([ r, u, phi, ret:0, fr:1/(2*%pi),  pp:0 ],
-	pp:first(quad_intde(PP( t, a, b, eps), phi, -%pi, %pi,  'epsrel=1d-8)),
+	pp:first(quad_intde(PP( t, a, b, eps), phi, -%pi, %pi,  'epsrel=1d-11)),
 	float(fr*pp*eps^(1-b))
 );
 
@@ -208,7 +221,7 @@ Kwg1(z, a, b):=u^((1-b)/a-1)*%e^(-(cos(%pi*a)*z)/u-u^(1/a))* sin((sin(%pi*a)*z)/
 
 
 /* all params*/
-gmwright(t, a, b):=block([ r, u, ret:0, fr:1/%pi,  pp:0, eps:1],
+gmwright(t, a, b):=block([ r, u, ret:0, fr:1/%pi,  pp:0, eps:1.0],
     if not numberp(t) then return('gmwright(t,a,b)), 
 	if t=0 then 
 		return(1/gamma(b)),
@@ -219,15 +232,15 @@ gmwright(t, a, b):=block([ r, u, ret:0, fr:1/%pi,  pp:0, eps:1],
 			if b=0 then 
 				ret:fr*first(quad_intdei(Kwgr0( -t, a ), r, 0, 'epsrel=1d-8))
 			elseif b=1 then
-				ret:1+fr*first(quad_intdei(Kwgr( -t, a, b), r, 0, 'epsrel=1d-8))
+				ret:1.0+fr*first(quad_intdei(Kwgr( -t, a, b), r, 0, 'epsrel=1d-8))
 			else
 				if b>0 then
 					if b<=1 then (
 						ret:fr*first(quad_intdei(Kwgr( -t, a, b), r, 0, 'epsrel=1d-8))
 					) else(
-						eps:1, 
+						eps:1.0, 
 						pp:phasewright2(-t, a, b, eps),
-						ret:fr*first(quad_intdei (Kwgr( -t, a, b), r,  eps,  'epsrel=1d-8)),
+						ret:fr*first(quad_intdei (Kwgr( -t, a, b), r,  eps,  'epsrel=1d-9)),
 						/*ret:fr/a*first(quad_intdei(Kwg1( -t, a, b), u, eps^a, 'epsrel=1d-8)),*/
 						/*ret:fr/b*first(quad_intdei(Kwg( -t, a, b), u, eps^b, 'epsrel=1d-8)),*/
 						ret: ret+pp
@@ -236,8 +249,8 @@ gmwright(t, a, b):=block([ r, u, ret:0, fr:1/%pi,  pp:0, eps:1],
 					ret:fr/a*first(quad_intdei (Kwg1( -t, a, b), u, 0, 'epsrel=1d-8))
 		)else (
 			/*stationary phase method*/
-			eps:max(float( abs(a*t)^(1/(a+1))), 1.0),
-			ret:-fr/a*first(quad_intdei (Kwg1( -t, a, b), u, eps^a,   'epsrel=1d-8)),
+			eps:max(float( abs(a*t)^(1/(a+1.0))), 1.0),
+			ret:-fr/a*first(quad_intdei (Kwg1( -t, a, b), u, eps^a,   'epsrel=1d-11)),
 			/*fr*first(quad_intdei(Kwgr( -t, a, b), r, 0, 'epsrel=1d-8)),*/
 			pp:phasewright2(-t, a, b, eps),
 			ret:float(ret)+pp
@@ -248,7 +261,7 @@ gmwright(t, a, b):=block([ r, u, ret:0, fr:1/%pi,  pp:0, eps:1],
 
 
 
-gmwright2(t, a, b):=block([ r, u, ret:0, fr: 1/%pi, nn:1, pp:0, eps:1],
+gmwright2(t, a, b):=block([ r, u, ret:0, fr: 1/%pi, nn:1, pp:0, eps:1.0],
     if not numberp(t) then return('gmwright2(t,a,b)), 
 	if t=0 then 
 		return(1/gamma(b)),
@@ -260,7 +273,7 @@ gmwright2(t, a, b):=block([ r, u, ret:0, fr: 1/%pi, nn:1, pp:0, eps:1],
 			if b=0 then 
 				ret:fr*first(quad_qagi(Kwgr0( -t, a ), r, 0, inf, 'epsrel=1d-8))
 			elseif b=1 then
-				ret:1+fr/a*first(quad_qagi(Kwg1( -t, a, b), u, 0, inf, 'epsrel=1d-8))
+				ret:1.0+fr/a*first(quad_qagi(Kwg1( -t, a, b), u, 0, inf, 'epsrel=1d-8))
 			else
 				if b>0 then
 					if b<=1 then 
@@ -270,6 +283,45 @@ gmwright2(t, a, b):=block([ r, u, ret:0, fr: 1/%pi, nn:1, pp:0, eps:1],
 						ret:fr/b*first(quad_qagi (Kwg( -t, a, b), u,  eps^b, inf, 'epsrel=1d-8)),
 						ret:ret+pp
 						)
+				else
+					ret:fr/a*first(quad_qagi (Kwg1( -t, a, b), u,0, inf, 'epsrel=1d-8))
+		)else (
+			/*stationary phase method*/
+			eps:float( abs(a*t)^(1/(a+1))),
+			ret:-fr/a*first(quad_qagi (Kwg1( -t, a, b), u, eps^a, inf, 'epsrel=1d-8)),
+			pp:phasewright1(-t, a, b, eps),
+			ret:float(ret)+pp
+		)
+	),
+    float(ret)
+);
+
+
+gmwright21(t, a, b):=block([ r, u, ret:0, fr: 1/%pi, nn:1, pp:0, eps:1.0],
+    if not numberp(t) then return('gmwright21(t,a,b)), 
+	if t=0 then 
+		return(1/gamma(b)),
+    if a=0 then 
+		ret:exp(t)/gamma(b)
+    else (
+		eps:float( abs(a*t)^(1/(a+1))),
+		if a<0 then (	
+			if b=0 then 
+				ret:fr*first(quad_qagi(Kwgr0( -t, a ), r, 0, inf, 'epsrel=1d-8))
+			elseif b=1 then
+				ret:1.0+fr/a*first(quad_qagi(Kwg1( -t, a, b), u, 0, inf, 'epsrel=1d-8))
+			else
+				if b>0 then
+					if b<=1 then (
+						ret:fr*first(quad_intdei(Kwgr( -t, a, b), r, 0, 'epsrel=1d-8))
+					) else(
+						eps:1.0, 
+						pp:phasewright1(-t, a, b, eps),
+						ret:fr*first(quad_qagi (Kwgr( -t, a, b), r,  eps, inf,  'epsrel=1d-8)),
+						/*ret:fr/a*first(quad_intdei(Kwg1( -t, a, b), u, eps^a, 'epsrel=1d-8)),*/
+						/*ret:fr/b*first(quad_intdei(Kwg( -t, a, b), u, eps^b, 'epsrel=1d-8)),*/
+						ret: ret+pp
+					)
 				else
 					ret:fr/a*first(quad_qagi (Kwg1( -t, a, b), u,0, inf, 'epsrel=1d-8))
 		)else (
@@ -304,6 +356,7 @@ W(n, m, z):=block([ret, x:gensym()],
 	ret:G(m-1,x+'z* x^n, x),
 	ret:ev(ret, nouns), 
 	ret:rat(at(ret, x=0)), 
+	display(ret),
 	ret:determinant(ret)/ gamma(m),
 	ratdisrep(ret)
 );
